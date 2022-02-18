@@ -32,43 +32,12 @@ else
 	MAKEFLAGS += --no-print-directory
 endif
 
-UPF_BPF_HAS_PKG_CONFIG := $(shell command -v $(PKG_CONFIG) 2>&1 >/dev/null && echo yes || echo no)
-
-UPF_BPF_CONFIG_DEPS := libbpf libxdp
-
-ifeq ($(UPF_BPF_HAS_PKG_CONFIG), yes)
-  UPF_BPF_PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(UPF_BPF_CONFIG_DEPS))
-else
-  UPF_BPF_PKG_CFLAGS :=
-endif
-
-CXXFLAGS += $(UPF_BPF_PKG_CFLAGS) \
-			$(INCLUDES)
-
-$(info [UPF-EBPF] CXXFLAGS is $(CXXFLAGS))
-
-ifdef BESS_LINK_DYNAMIC
-  ifeq ($(UPF_BPF_HAS_PKG_CONFIG), yes)
-    UPF_PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(UPF_BPF_CONFIG_DEPS))
-  else
-    UPF_PKG_LIBS := 
-  endif
-else # Used static libraries
-  ifeq ($(UPF_BPF_HAS_PKG_CONFIG), yes)
-    UPF_PKG_LIBS := $(shell $(PKG_CONFIG) --static --libs $(UPF_BPF_CONFIG_DEPS))
-  endif
-endif
-
-LDFLAGS += $(UPF_PKG_LIBS)
-
-$(info [UPF-EBPF] LDFLAGS is $(LDFLAGS))
-
 MODULES_DIR := modules
 
 bpf_objects = upf_bpf_main.bpf.o
-cc_objects = modules/upf_bpf_main.o
 
-all: $(bpf_objects)
+all: clean $(bpf_objects)
+	$(call msg,ALL,BPF Objects compiled)
 
 # modules/upf_bpf_main.o: modules/upf_bpf_main.cc $(PROTO_HEADERS) $(bpf_objects)
 # 	ls 
@@ -81,19 +50,13 @@ $(MODULES_DIR)/%.skel.h: $(MODULES_DIR)/%.bpf.o
 	$(Q)$(BPFTOOL) gen skeleton $< > $@
 
 # Build BPF code
-$(MODULES_DIR)/%.bpf.o: $(MODULES_DIR)/%.bpf.c $(wildcard %.h)
+$(MODULES_DIR)/%.bpf.o: $(MODULES_DIR)/ebpf/%.bpf.c $(wildcard $(MODULES_DIR)/ebpf/%.h)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(UPF_ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
 	$(Q)$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 clean:
-	rm $(MODULES_DIR)/*.skel.h
-# format:
-# 	clang-format -style=file -i *.c *.h
-# 	@grep -n "TODO" *.[ch] || true
+	rm -f $(MODULES_DIR)/*.skel.h
 
-# delete failed targets
-# .DELETE_ON_ERROR:
-
-# # keep intermediate (.skel.h, .bpf.o, etc) targets
-# .SECONDARY:
+format:
+	clang-format -style=file -i $(MODULES_DIR)/ebpf/*.c $(MODULES_DIR)/ebpf/*.h

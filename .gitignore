@@ -1,5 +1,4 @@
 # Temporary/hidden files
-.*
 *.dump
 cscope.*
 *.vim
@@ -51,3 +50,6 @@ compile_commands.json
 
 # virtualenv
 venv/
+
+# Specific files from upf-ebpf
+!upf-ebpf/.gitignore

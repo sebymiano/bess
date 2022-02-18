@@ -89,7 +89,7 @@ BESS_DIR = os.path.dirname(os.path.abspath(__file__))
 DEPS_DIR = '%s/deps' % BESS_DIR
 
 DPDK_URL = 'https://fast.dpdk.org/rel'
-DPDK_VER = 'dpdk-20.11.3'
+DPDK_VER = 'dpdk-20.11.4'
 DPDK_TARGET = 'x86_64-native-linuxapp-gcc'
 
 kernel_release = cmd('uname -r', quiet=True).strip()
@@ -252,7 +252,7 @@ def download_dpdk(quiet=False):
 
 def configure_dpdk():
     print('Configuring DPDK...')
-    meson_opts = '--buildtype=debugoptimized'
+    meson_opts = '--buildtype=debugoptimized -Ddisable_drivers=common/octeontx,common/octeontx2,crypto/*,compress/isal'
 
     arch = os.getenv('CPU')
     if arch:
@@ -299,7 +299,7 @@ def build_dpdk():
         cmd('patch -d %s -N -p1 < %s || true' % (DPDK_DIR, f), shell=True)
 
     print('Building DPDK...')
-    cmd('ninja -C %s install' % DPDK_BUILD)
+    cmd('sudo ninja -C %s install' % DPDK_BUILD)
 
 
 def generate_protobuf_files():

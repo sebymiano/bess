@@ -19,10 +19,9 @@
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 SEC("xdp")
-int xdp_upf(struct xdp_md *xdp)
-{
-	void *data_end = (void *)(long)xdp->data_end;
-	void *data = (void *)(long)xdp->data;
+int xdp_upf(struct xdp_md *xdp) {
+    void *data_end = (void *)(long)xdp->data_end;
+    void *data = (void *)(long)xdp->data;
 
-	return XDP_PASS;
+    return XDP_PASS;
 }
