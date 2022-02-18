@@ -32,9 +32,18 @@
 
 #include <rte_bus_pci.h>
 #include <rte_ethdev.h>
+#include <rte_flow.h>
+#include <rte_pmd_i40e.h>
 
 #include "../utils/ether.h"
 #include "../utils/format.h"
+
+// TODO: Replace with one time initialized key during InitDriver?
+static uint8_t rss_key[40] = {0xD8, 0x2A, 0x6C, 0x5A, 0xDD, 0x3B, 0x9D, 0x1E,
+                              0x14, 0xCE, 0x2F, 0x37, 0x86, 0xB2, 0x69, 0xF0,
+                              0x44, 0x31, 0x7E, 0xA2, 0x07, 0xA5, 0x0A, 0x99,
+                              0x49, 0xC6, 0xA4, 0xFE, 0x0C, 0x4F, 0x59, 0x02,
+                              0xD4, 0x44, 0xE2, 0x4A, 0xDB, 0xE1, 0x05, 0x82};
 
 static const rte_eth_conf default_eth_conf(const rte_eth_dev_info &dev_info,
                                            int nb_rxq) {
@@ -45,8 +54,8 @@ static const rte_eth_conf default_eth_conf(const rte_eth_dev_info &dev_info,
   ret.rxmode.offloads = 0;
 
   ret.rx_adv_conf.rss_conf = {
-      .rss_key = nullptr,
-      .rss_key_len = 0,
+      .rss_key = rss_key,
+      .rss_key_len = sizeof(rss_key),
       .rss_hf = (ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP | ETH_RSS_SCTP) &
                 dev_info.flow_type_rss_offloads,
   };
@@ -199,6 +208,341 @@ static CommandResponse find_dpdk_vdev(const std::string &vdev,
   return CommandSuccess();
 }
 
+/* Create RSS on inner source IP. */
+CommandResponse create_gtp_u_inner_ip_rss_flow(dpdk_port_t port_id,
+                                              const uint32_t &flow_profile, 
+                                              uint64_t rss_types,
+                                              const int &num_rxq, bool config_queues = true) {
+  uint16_t queues[num_rxq];
+  int i, nb_queues;
+  for (i = 0, nb_queues = 0; i < num_rxq; i++) {
+    queues[nb_queues++] = i;
+  }
+
+	struct rte_flow *flow;
+	struct rte_flow_error err;
+	
+  struct rte_flow_attr attr; /* Holds the flow attributes. */
+  memset(&attr, 0, sizeof(attr));
+  attr.group = 0; /* set the rule on the main group. */
+  attr.ingress = 1;/* Rx flow. */
+  attr.priority = 1; /* add priority to rule
+  to give the Decap rule higher priority since
+  it is more specific */
+	
+  struct rte_flow_item_gtp gtp_spec;
+  memset(&gtp_spec, 0, sizeof(gtp_spec));
+	gtp_spec.msg_type = 255; /* The expected value. */
+	
+  struct rte_flow_item_gtp gtp_mask;
+  memset(&gtp_mask, 0, sizeof(gtp_mask));
+	gtp_mask.msg_type = 0xff; /* match only message type.
+	mask bit equal to 1 means match on this bit. */
+	
+  struct rte_flow_action_rss rss;
+  memset(&rss, 0, sizeof(rss));
+  rss.level = 2; /* RSS should be done on inner header. */
+  if (config_queues) {
+    rss.queue = queues; /* Set the selected target queues. */
+    rss.queue_num = nb_queues; /* The number of queues. */
+  }
+  rss.types =  rss_types; //ETH_RSS_IP | ETH_RSS_L3_SRC_ONLY
+
+  struct rte_flow_action actions[2];
+  memset(actions, 0, sizeof(actions));
+
+  /* The RSS action to be used. */
+	actions[0].type = RTE_FLOW_ACTION_TYPE_RSS;
+  actions[0].conf = &rss;
+  /* End action mast be the last action. */
+  actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+  actions[1].conf = NULL;
+
+	/* Configure matching on outer ipv4 and GTP-U.
+	 * This case we don't care about specific outer ipv4 or UDP we just 
+	 * seach for any header that maches eth / ipv4 / udp / gtp type 255 / 
+	 * ipv4 / udp.
+	 * The RSS will only be done on the inner ipv4 src file, in order to 
+	 * make sure that all of the packets from a given user (inner source
+	 * ip) will be routed to the same core.
+	 */
+  struct rte_flow_item pattern[5];
+  memset(pattern, 0, sizeof(pattern));
+
+	pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
+	pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
+	pattern[2].type = RTE_FLOW_ITEM_TYPE_UDP;
+	pattern[3].type = RTE_FLOW_ITEM_TYPE_GTP;
+	pattern[3].spec = &gtp_spec;
+	pattern[3].mask = &gtp_mask;
+  pattern[4].type = RTE_FLOW_ITEM_TYPE_END;
+  char buf[32];
+	
+	int ret = rte_flow_validate(port_id, &attr, pattern, actions, &err);
+  if (ret)
+    return CommandFailure(EINVAL,
+                          "Port %u: Failed to validate flow profile %u %s",
+                          port_id, flow_profile, err.message);
+  flow = rte_flow_create(port_id, &attr, pattern, actions, &err);
+  if (flow == nullptr)
+    return CommandFailure(EINVAL, "Port %u: Failed to create flow: Type %d (%s), message: %s (%s) (profile %u)", port_id,
+                          err.type, 
+                          err.cause ? (snprintf(buf, sizeof(buf), "cause: %p, ", err.cause), buf) : "",
+                          err.message, 
+                          rte_strerror(rte_errno), 
+                          flow_profile);
+
+  return CommandSuccess();
+
+}
+
+/* Get dynamic device personalization profile info list*/
+#define PROFILE_INFO_SIZE 48
+#define MAX_PROFILE_NUM 16
+
+static void ddp_get_list(dpdk_port_t port_id) {
+	struct rte_pmd_i40e_profile_list *p_list;
+	struct rte_pmd_i40e_profile_info *p_info;
+	uint32_t p_num;
+	uint32_t size;
+	uint32_t i;
+	int ret = -ENOTSUP;
+
+	size = PROFILE_INFO_SIZE * MAX_PROFILE_NUM + 4;
+	p_list = (struct rte_pmd_i40e_profile_list *)malloc(size);
+	if (!p_list) {
+		fprintf(stderr, "%s: Failed to malloc buffer\n", __func__);
+		return;
+	}
+
+	if (ret == -ENOTSUP)
+		ret = rte_pmd_i40e_get_ddp_list(port_id,
+						(uint8_t *)p_list, size);
+
+	if (!ret) {
+		p_num = p_list->p_count;
+		printf("Profile number is: %d\n\n", p_num);
+
+		for (i = 0; i < p_num; i++) {
+			p_info = &p_list->p_info[i];
+			printf("Profile %d:\n", i);
+			printf("Track id:     0x%x\n", p_info->track_id);
+			printf("Version:      %d.%d.%d.%d\n",
+			       p_info->version.major,
+			       p_info->version.minor,
+			       p_info->version.update,
+			       p_info->version.draft);
+			printf("Profile name: %s\n\n", p_info->name);
+		}
+	}
+
+	free(p_list);
+
+	if (ret < 0)
+		fprintf(stderr, "Failed to get ddp list\n");
+}
+
+static void cmd_pctype_mapping_update_parsed(dpdk_port_t port_id) {
+	int ret = -ENOTSUP;
+	struct rte_pmd_i40e_flow_type_mapping mapping;
+
+	mapping.flow_type = 22;
+  mapping.pctype = 0ULL;
+  mapping.pctype |= (1ULL << 22);
+	ret = rte_pmd_i40e_flow_type_mapping_update(port_id, &mapping, 1, 0);
+
+	switch (ret) {
+	case 0:
+		break;
+	case -EINVAL:
+		fprintf(stderr, "invalid pctype or flow type\n");
+		break;
+	case -ENODEV:
+		fprintf(stderr, "invalid port_id %d\n", port_id);
+		break;
+	case -ENOTSUP:
+		fprintf(stderr, "function not implemented\n");
+		break;
+	default:
+		fprintf(stderr, "programming error: (%s)\n", strerror(-ret));
+	}
+}
+
+static int eth_dev_info_get_print_err(uint16_t port_id, struct rte_eth_dev_info *dev_info)
+{
+	int ret;
+
+	ret = rte_eth_dev_info_get(port_id, dev_info);
+	if (ret != 0)
+		fprintf(stderr,
+			"Error during getting device (port %u) info: %s\n",
+			port_id, strerror(-ret));
+
+	return ret;
+}
+
+static void config_rss(uint16_t port_id) {
+	struct rte_eth_rss_conf rss_conf;
+  memset(&rss_conf, 0, sizeof(rss_conf));
+  rss_conf.rss_key_len = 0;
+
+	struct rte_eth_dev_info dev_info;
+  memset(&dev_info, 0, sizeof(dev_info));
+  dev_info.flow_type_rss_offloads = 0;
+
+	int use_default = 0;
+	int all_updated = 1;
+	int diag;
+	int ret;
+
+  rss_conf.rss_hf = 1ULL << 22;
+	rss_conf.rss_key = NULL;
+	/* Update global configuration for RSS types. */
+  struct rte_eth_rss_conf local_rss_conf;
+
+  ret = eth_dev_info_get_print_err(port_id, &dev_info);
+  if (ret != 0)
+    return;
+
+  if (use_default)
+    rss_conf.rss_hf = dev_info.flow_type_rss_offloads;
+
+  local_rss_conf = rss_conf;
+  local_rss_conf.rss_hf = rss_conf.rss_hf & dev_info.flow_type_rss_offloads;
+  if (local_rss_conf.rss_hf != rss_conf.rss_hf) {
+    printf("Port %u modified RSS hash function based on hardware support,"
+      "requested:%#" PRIx64 " configured:%#" PRIx64 "\n",
+      port_id, rss_conf.rss_hf, local_rss_conf.rss_hf);
+  }
+  diag = rte_eth_dev_rss_hash_update(port_id, &local_rss_conf);
+  if (diag < 0) {
+    all_updated = 0;
+    fprintf(stderr,
+      "Configuration of RSS hash at ethernet port %d failed with error (%d): %s.\n",
+      port_id, -diag, strerror(-diag));
+  }
+
+	if (all_updated && !use_default) {
+		printf("rss_hf %#" PRIx64 "\n", rss_conf.rss_hf);
+	}
+}
+
+CommandResponse i40e_create_gtp_u_inner_ip_rss_flow(dpdk_port_t port_id) {
+  ddp_get_list(port_id);
+  cmd_pctype_mapping_update_parsed(port_id);
+  config_rss(port_id);
+
+  return CommandSuccess();
+
+}
+
+CommandResponse flow_create_one(dpdk_port_t port_id,
+                                const uint32_t &flow_profile, int size,
+                                uint64_t rss_types,
+                                rte_flow_item_type *pattern) {
+  struct rte_flow_item items[size];
+  memset(items, 0, sizeof(items));
+
+  for (int i = 0; i < size; i++) {
+    items[i].type = pattern[i];
+    items[i].spec = nullptr;
+    items[i].mask = nullptr;
+  }
+
+  struct rte_flow *handle;
+  struct rte_flow_error err;
+  memset(&err, 0, sizeof(err));
+
+  struct rte_flow_action actions[2];
+  memset(actions, 0, sizeof(actions));
+
+  struct rte_flow_attr attributes;
+  memset(&attributes, 0, sizeof(attributes));
+  attributes.ingress = 1;
+
+  struct rte_flow_action_rss action_rss;
+  memset(&action_rss, 0, sizeof(action_rss));
+  action_rss.func = RTE_ETH_HASH_FUNCTION_DEFAULT;
+  action_rss.key_len = 0;
+  action_rss.types = rss_types;
+
+  actions[0].type = RTE_FLOW_ACTION_TYPE_RSS;
+  actions[0].conf = &action_rss;
+  actions[1].type = RTE_FLOW_ACTION_TYPE_END;
+
+  int ret = rte_flow_validate(port_id, &attributes, items, actions, &err);
+  if (ret)
+    return CommandFailure(EINVAL,
+                          "Port %u: Failed to validate flow profile %u %s",
+                          port_id, flow_profile, err.message);
+
+  handle = rte_flow_create(port_id, &attributes, items, actions, &err);
+  if (handle == nullptr)
+    return CommandFailure(EINVAL, "Port %u: Failed to create flow %s", port_id,
+                          err.message);
+
+  return CommandSuccess();
+}
+
+#define NUM_ELEMENTS(x) (sizeof(x) / sizeof((x)[0]))
+
+enum FlowProfile : uint32_t
+{
+  profileN3 = 3,
+  profileN6 = 6,
+  profileN9 = 9,
+};
+
+CommandResponse flow_create(dpdk_port_t port_id, const uint32_t &flow_profile, const int &num_rxq, const std::string &driver_name) {
+  CommandResponse err;
+
+  rte_flow_item_type N39_NSA[] = {
+      RTE_FLOW_ITEM_TYPE_ETH, RTE_FLOW_ITEM_TYPE_IPV4, RTE_FLOW_ITEM_TYPE_UDP,
+      RTE_FLOW_ITEM_TYPE_GTPU, RTE_FLOW_ITEM_TYPE_IPV4,
+      RTE_FLOW_ITEM_TYPE_END};
+
+  rte_flow_item_type N6[] = {
+      RTE_FLOW_ITEM_TYPE_ETH, RTE_FLOW_ITEM_TYPE_IPV4,
+      RTE_FLOW_ITEM_TYPE_END};
+
+  switch (flow_profile) {
+    uint64_t rss_types;
+    // N3 traffic with and without PDU Session container
+    case profileN3:
+      rss_types = ETH_RSS_IP | ETH_RSS_L3_SRC_ONLY;
+      if (driver_name == "mlx5_pci") {
+        err = create_gtp_u_inner_ip_rss_flow(port_id, flow_profile, rss_types, num_rxq);
+      } else if (driver_name == "net_i40e") {
+        err = i40e_create_gtp_u_inner_ip_rss_flow(port_id);
+      } else {
+        err = flow_create_one(port_id, flow_profile, NUM_ELEMENTS(N39_NSA),
+                              rss_types, N39_NSA);
+      }
+      if (err.error().code() != 0) {
+        return err;
+      }
+      break;
+
+    // N6 traffic
+    case profileN6:
+      if (driver_name != "net_i40e") {
+        rss_types = ETH_RSS_IPV4 | ETH_RSS_L3_DST_ONLY;
+        err = flow_create_one(port_id, flow_profile, NUM_ELEMENTS(N6),
+                              rss_types, N6);
+      }
+      break;
+
+    // N9 traffic with and without PDU Session container
+    case profileN9:
+      //TODO: Handle this case
+      break;
+
+    default:
+      return CommandFailure(EINVAL, "Unknown flow profile %u", flow_profile);
+  }
+  return err;
+}
+
 CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   dpdk_port_t ret_port_id = DPDK_PORT_UNKNOWN;
 
@@ -245,16 +589,28 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   if (arg.loopback()) {
     eth_conf.lpbk_mode = 1;
   }
+  if (arg.hwcksum()) {
+    eth_conf.rxmode.offloads = DEV_RX_OFFLOAD_IPV4_CKSUM |
+                               DEV_RX_OFFLOAD_UDP_CKSUM |
+                               DEV_RX_OFFLOAD_TCP_CKSUM;
+  }
 
   ret = rte_eth_dev_configure(ret_port_id, num_rxq, num_txq, &eth_conf);
   if (ret != 0) {
+    VLOG(1) << "Failed to configure with hardware checksum offload. "
+            << "Create PMDPort without hardware offload" << std::endl;
     return CommandFailure(-ret, "rte_eth_dev_configure() failed");
   }
 
-  int sid = rte_eth_dev_socket_id(ret_port_id);
+  int sid = arg.socket_case() == bess::pb::PMDPortArg::kSocketId ?
+	  arg.socket_id() : rte_eth_dev_socket_id(ret_port_id);
+  /* if soocket_id is invalid, set to 0 */
   if (sid < 0 || sid > RTE_MAX_NUMA_NODES) {
-    sid = 0;  // if socket_id is invalid, set to 0
+    LOG(WARNING) << "Invalid socket, falling back... ";
+    sid = 0;
   }
+  LOG(INFO) << "Initializing Port:" << ret_port_id
+	    << " with memory from socket " << sid;
 
   eth_rxconf = dev_info.default_rxconf;
   eth_rxconf.rx_drop_en = 1;
@@ -308,7 +664,12 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
     }
   }
 
-  rte_eth_promiscuous_enable(ret_port_id);
+  if (arg.promiscuous_mode()) {
+    ret = rte_eth_promiscuous_enable(ret_port_id);
+    if (ret != 0) {
+      return CommandFailure(-ret, "rte_eth_promiscuous_enable() failed");
+    }
+  }
 
   int offload_mask = 0;
   offload_mask |= arg.vlan_offload_rx_strip() ? ETH_VLAN_STRIP_OFFLOAD : 0;
@@ -327,7 +688,8 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   }
   dpdk_port_id_ = ret_port_id;
 
-  int numa_node = rte_eth_dev_socket_id(static_cast<int>(ret_port_id));
+  int numa_node = arg.socket_case() == bess::pb::PMDPortArg::kSocketId ?
+              sid : rte_eth_dev_socket_id(ret_port_id);
   node_placement_ =
       numa_node == -1 ? UNCONSTRAINED_SOCKET : (1ull << numa_node);
 
@@ -338,6 +700,17 @@ CommandResponse PMDPort::Init(const bess::pb::PMDPortArg &arg) {
   CollectStats(true);
 
   driver_ = dev_info.driver_name ?: "unknown";
+
+  LOG(INFO) << "Driver name: " << driver_;
+
+  if (arg.flow_profiles_size() > 0) {
+    for (int i = 0; i < arg.flow_profiles_size(); ++i) {
+      err = flow_create(ret_port_id, arg.flow_profiles(i), num_rxq, driver_);
+      if (err.error().code() != 0) {
+        return err;
+      }
+    }
+  }
 
   return CommandSuccess();
 }
@@ -389,6 +762,10 @@ restart:
 }
 
 void PMDPort::DeInit() {
+  struct rte_flow_error err;
+  memset(&err, 0, sizeof(err));
+  rte_flow_flush(dpdk_port_id_, &err);
+
   rte_eth_dev_stop(dpdk_port_id_);
 
   if (hot_plugged_) {
@@ -448,9 +825,10 @@ void PMDPort::CollectStats(bool reset) {
 
   port_stats_.inc.dropped = stats.imissed;
 
-  // i40e/net_e1000_igb PMD drivers, ixgbevf and net_bonding vdevs don't support
-  // per-queue stats
-  if (driver_ == "net_i40e" || driver_ == "net_i40e_vf" ||
+  // ice/i40e/net_e1000_igb PMD drivers, ixgbevf and net_bonding vdevs don't
+  // support per-queue stats
+  if (driver_ == "net_ice" || driver_ == "net_iavf" ||
+      driver_ == "net_i40e" || driver_ == "net_i40e_vf" ||
       driver_ == "net_ixgbe_vf" || driver_ == "net_bonding" ||
       driver_ == "net_e1000_igb") {
     // NOTE:

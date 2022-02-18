@@ -63,7 +63,7 @@ HAS_PKG_CONFIG := $(shell command -v $(PKG_CONFIG) 2>&1 >/dev/null && echo yes |
 
 # We always want these libraries to be dynamically linked even when the
 # user requests a static build.
-ALWAYS_DYN_LIBS := -lpthread -ldl
+ALWAYS_DYN_LIBS := -lpthread -ldl -lssl -lcrypto
 # These libraries are not supported by pkg-config.
 ALWAYS_LIBS := -lpcap -lgflags -lnuma
 # If pkg-config is available, we just need a list of the dependecies.
@@ -73,7 +73,8 @@ NO_PKG_CONFIG_LIBS := -lglog -lgflags -lprotobuf -lgrpc++ -lunwind -lz
 # If pkg-config is not available and we're static linking, we also need
 # the indirect dependecies.  This is annoying, because they may change
 # in future versions.
-NO_PKG_CONFIG_LIBS_INDIRECT := -lgrpc -lssl -lcrypto -llzma
+NO_PKG_CONFIG_LIBS_INDIRECT := -lgrpc -llzma
+# REMOVE_LIBS := -lssl
 
 ifeq ($(HAS_PKG_CONFIG), yes)
   PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_CONFIG_DEPS))
@@ -137,6 +138,7 @@ else # Used static libraries
     # we want to dynamically link no matter what.  Filter those out
     # to avoid including them into the static linking section.
     PKG_LIBS := $(filter-out $(ALWAYS_DYN_LIBS), $(PKG_LIBS))
+    # PKG_LIBS := $(filter-out $(REMOVE_LIBS), $(PKG_LIBS))
   else
     PKG_LIBS := $(NO_PKG_CONFIG_LIBS) $(NO_PKG_CONFIG_LIBS_INDIRECT)
   endif
