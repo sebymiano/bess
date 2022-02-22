@@ -1,8 +1,19 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Copyright 2021 Sebastiano Miano <mianosebastiano@gmail.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-/*****************************************************************************
- * Include files
- *****************************************************************************/
 #include <bpf/bpf.h>
 #include <bpf/btf.h>
 #include <bpf/libbpf.h>
@@ -13,55 +24,52 @@
 #include <sys/utsname.h>
 
 #include <xdp/prog_dispatcher.h>
-
-// Copyright (c) 2014-2017, The Regents of the University of California.
-// Copyright (c) 2016-2017, Nefeli Networks, Inc.
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-// list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-// this list of conditions and the following disclaimer in the documentation
-// and/or other materials provided with the distribution.
-//
-// * Neither the names of the copyright holders nor the names of their
-// contributors may be used to endorse or promote products derived from this
-// software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+#include <xdp/libxdp.h>
 
 #include "upf_bpf_main.h"
 
+
 using bess::utils::be32_t;
 
-const Commands UPF_EBPF::cmds = {
-    {"add", "UPF_EBPF_Arg",
-     MODULE_CMD_FUNC(&UPF_EBPF::CommandAdd), Command::THREAD_UNSAFE},
-    {"clear", "EmptyArg", MODULE_CMD_FUNC(&UPF_EBPF::CommandClear),
+const Commands UPFeBPF::cmds = {
+    {"add", "UPFeBPFArg",
+     MODULE_CMD_FUNC(&UPFeBPF::CommandAdd), Command::THREAD_UNSAFE},
+    {"clear", "EmptyArg", MODULE_CMD_FUNC(&UPFeBPF::CommandClear),
      Command::THREAD_UNSAFE},
 };
 
+
 CommandResponse
-UPF_EBPF::Init(const sample::upf_ebpf::pb::UPF_EBPF_Arg &arg) {
+UPFeBPF::Init(const sample::upfebpf::pb::UPFeBPFArg &arg) {
+  int err;
+  
+  /* Set up libbpf errors and debug info callback */
+  libbpf_set_print(libbpf_print_fn);
+  
+  /* Bump RLIMIT_MEMLOCK to allow BPF sub-system to do anything */
+  bump_memlock_rlimit();
+
+  /* Open BPF application */
+  skel = upf_bpf_main_bpf__open();
+  if (!skel) {
+      fprintf(stderr, "Failed to open BPF skeleton\n");
+      return CommandFailure(1);
+  }
+  
+  prog = xdp_program__from_bpf_obj(skel->obj, "upf_main");
+
+  err = xdp_program__attach(prog, 5, XDP_MODE_NATIVE, 0);
+
+  if (err) {
+    fprintf(stderr, "Failed to attach XDP program\n");
+    return CommandFailure(1);
+  }
+
   return CommandAdd(arg);
 }
 
-CommandResponse UPF_EBPF::CommandAdd(
-    const sample::upf_ebpf::pb::UPF_EBPF_Arg &arg) {
+CommandResponse UPFeBPF::CommandAdd(
+    const sample::upfebpf::pb::UPFeBPFArg &arg) {
   size_t curr = num_vars_;
   if (curr + arg.fields_size() > kMaxVariable) {
     return CommandFailure(EINVAL, "max %zu variables can be specified",
@@ -127,12 +135,17 @@ CommandResponse UPF_EBPF::CommandAdd(
   return CommandSuccess();
 }
 
-CommandResponse UPF_EBPF::CommandClear(const bess::pb::EmptyArg &) {
+CommandResponse UPFeBPF::CommandClear(const bess::pb::EmptyArg &) {
+  if (prog != nullptr) {
+    xdp_program__detach(prog, 5, XDP_MODE_NATIVE, 0);
+    xdp_program__close(prog);
+  }
+  
   return CommandSuccess();
 }
 
-void UPF_EBPF::ProcessBatch(__attribute__((unused)) Context *ctx, __attribute__((unused)) bess::PacketBatch *batch) {
+void UPFeBPF::ProcessBatch(__attribute__((unused)) Context *ctx, __attribute__((unused)) bess::PacketBatch *batch) {
   
 }
 
-ADD_MODULE(UPF_EBPF, "upf-ebpf", "5G UPF built with eBPF/XDP")
+ADD_MODULE(UPFeBPF, "upf-ebpf", "5G UPF built with eBPF/XDP")

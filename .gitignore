@@ -53,3 +53,5 @@ venv/
 
 # Specific files from upf-ebpf
 !upf-ebpf/.gitignore
+
+.vscode

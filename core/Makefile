@@ -167,7 +167,7 @@ endif
 # Unless we explicitly specify a default goal, the first target in the
 # included .mk file below will become the default goal by surprise.
 .DEFAULT_GOAL := all
-
+MODULE_LDFLAGS := 
 -include extra*.mk
 
 # Each plugin may have their own extra Makefile snippets
@@ -412,7 +412,7 @@ $(eval $(call BUILD, \
         MODULE_LD, \
         %.so, \
         %.o, \
-        $(CXX) -shared -o $$@ $$^ $(LDFLAGS)))
+        $(CXX) -shared -o $$@ $$^ $(LDFLAGS) $(MODULE_LDFLAGS)))
 
 $(eval $(call BUILD, \
         MODULE_TEST_LD, \

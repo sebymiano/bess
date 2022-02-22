@@ -29,13 +29,13 @@
 
 syntax = "proto3";
 
-package sample.upf_ebpf.pb;
+package sample.upfebpf.pb;
 
 /**
  * The function `clear()` for SequentialUpdate takes no parameters and clears all
  * state in the module.
  */
-message UPF_EBPF_CommandClearArg {
+message UPFeBPFCommandClearArg {
 }
 
 /**
@@ -45,7 +45,7 @@ message UPF_EBPF_CommandClearArg {
  * __Input Gates__: 1
  * __Output Gates__: 1
  */
-message UPF_EBPF_Arg {
+message UPFeBPFArg {
   /**
    * SequentialUpdate's Field specifies where to rewrite, and what values to rewrite
    * in each packet processed.

@@ -1,32 +1,18 @@
-// Copyright (c) 2014-2017, The Regents of the University of California.
-// Copyright (c) 2016-2017, Nefeli Networks, Inc.
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-// list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-// this list of conditions and the following disclaimer in the documentation
-// and/or other materials provided with the distribution.
-//
-// * Neither the names of the copyright holders nor the names of their
-// contributors may be used to endorse or promote products derived from this
-// software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// POSSIBILITY OF SUCH DAMAGE.
+/*
+ * Copyright 2021 Sebastiano Miano <mianosebastiano@gmail.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #ifndef BESS_MODULES_UPF_BPF_H_
 #define BESS_MODULES_UPF_BPF_H_
@@ -34,27 +20,52 @@
 #include "module.h"
 #include "utils/endian.h"
 
+#include <bpf/bpf.h>
+#include <bpf/btf.h>
+#include <bpf/libbpf.h>
+
 #include "pb/upf_ebpf_msg.pb.h"
+#include "upf_bpf_main.skel.h"
 
 static const size_t kMaxVariable = 16;
 
-class UPF_EBPF final : public Module {
+static int libbpf_print_fn([[maybe_unused]] enum libbpf_print_level level, const char *format,
+                           va_list args) {
+    return vfprintf(stderr, format, args);
+}
+
+static void bump_memlock_rlimit(void) {
+    struct rlimit rlim_new = {
+        .rlim_cur = RLIM_INFINITY,
+        .rlim_max = RLIM_INFINITY,
+    };
+
+    if (setrlimit(RLIMIT_MEMLOCK, &rlim_new)) {
+        fprintf(stderr, "Failed to increase RLIMIT_MEMLOCK limit!\n");
+        exit(1);
+    }
+}
+
+class UPFeBPF final : public Module {
 public:
   static const Commands cmds;
 
-  UPF_EBPF() : Module(), num_vars_(), vars_() {}
+  UPFeBPF() : Module(), num_vars_(), vars_() {
+    skel = nullptr;
+    prog = nullptr;
+  }
 
-  CommandResponse Init(const sample::upf_ebpf::pb::UPF_EBPF_Arg &arg);
+  CommandResponse Init(const sample::upfebpf::pb::UPFeBPFArg &arg);
 
   void ProcessBatch(Context *ctx, bess::PacketBatch *batch) override;
 
-  CommandResponse
-  CommandAdd(const sample::upf_ebpf::pb::UPF_EBPF_Arg &arg);
+  CommandResponse CommandAdd(const sample::upfebpf::pb::UPFeBPFArg &arg);
   CommandResponse CommandClear(const bess::pb::EmptyArg &arg);
 
 private:
   size_t num_vars_;
-
+  struct upf_bpf_main_bpf *skel;
+  struct xdp_program *prog;
   struct {
     bess::utils::be32_t mask; // bits with 1 won't be updated
     uint32_t min;
