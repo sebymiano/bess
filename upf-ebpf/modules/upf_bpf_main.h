@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Sebastiano Miano <mianosebastiano@gmail.com>
+ * Copyright 2022 Sebastiano Miano <mianosebastiano@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,15 @@
 #include <bpf/libbpf.h>
 
 #include "pb/upf_ebpf_msg.pb.h"
-#include "upf_bpf_main.skel.h"
+#include "upf_bpf_main_access.skel.h"
+#include "upf_bpf_main_core.skel.h"
+
+#include "port_conf.h"
 
 static const size_t kMaxVariable = 16;
 
-static int libbpf_print_fn([[maybe_unused]] enum libbpf_print_level level, const char *format,
-                           va_list args) {
+static int libbpf_print_fn([[maybe_unused]] enum libbpf_print_level level,
+                           const char *format, va_list args) {
     return vfprintf(stderr, format, args);
 }
 
@@ -47,33 +50,35 @@ static void bump_memlock_rlimit(void) {
 }
 
 class UPFeBPF final : public Module {
-public:
-  static const Commands cmds;
+  public:
+    static const Commands cmds;
 
-  UPFeBPF() : Module(), num_vars_(), vars_() {
-    skel = nullptr;
-    prog = nullptr;
-  }
+    UPFeBPF()
+        : Module(), skel_access_(nullptr), prog_access_(nullptr),
+          skel_core_(nullptr), prog_core_(nullptr) {}
 
-  CommandResponse Init(const sample::upfebpf::pb::UPFeBPFArg &arg);
+    CommandResponse Init(const upf_ebpf::pb::UPFeBPFArg &arg);
 
-  void ProcessBatch(Context *ctx, bess::PacketBatch *batch) override;
+    void ProcessBatch(Context *ctx, bess::PacketBatch *batch) override;
 
-  CommandResponse CommandAdd(const sample::upfebpf::pb::UPFeBPFArg &arg);
-  CommandResponse CommandClear(const bess::pb::EmptyArg &arg);
+    // CommandResponse CommandAdd(const upf_ebpf::pb::UPFeBPFArg &arg);
+    CommandResponse CommandClear(const bess::pb::EmptyArg &arg);
 
-private:
-  size_t num_vars_;
-  struct upf_bpf_main_bpf *skel;
-  struct xdp_program *prog;
-  struct {
-    bess::utils::be32_t mask; // bits with 1 won't be updated
-    uint32_t min;
-    uint32_t range; // max - min + 1
-    uint32_t cur;
-    size_t offset;
-    size_t bit_shift;
-  } vars_[kMaxVariable];
+  private:
+    int initPorts(const upf_ebpf::pb::UPFeBPFArg &arg);
+    int openAndLoadAccess(const upf_ebpf::pb::UPFeBPFArg_Conf &conf);
+    int openAndLoadCore(const upf_ebpf::pb::UPFeBPFArg_Conf &conf);
+
+  private:
+    size_t num_vars_;
+    struct upf_bpf_main_access_bpf *skel_access_;
+    struct xdp_program *prog_access_;
+
+    struct upf_bpf_main_core_bpf *skel_core_;
+    struct xdp_program *prog_core_;
+
+    PortConf access_port_;
+    PortConf core_port_;
 };
 
 #endif // BESS_MODULES_UPF_BPF_H_

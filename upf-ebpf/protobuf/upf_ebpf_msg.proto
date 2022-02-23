@@ -29,32 +29,20 @@
 
 syntax = "proto3";
 
-package sample.upfebpf.pb;
+package upf_ebpf.pb;
 
 /**
- * The function `clear()` for SequentialUpdate takes no parameters and clears all
+ * The function `clear()` for UPFeBPF takes no parameters and clears all
  * state in the module.
  */
 message UPFeBPFCommandClearArg {
 }
 
-/**
- * The SequentialUpdate module rewrites a specified field (`offset` and `size`) in a packet
- * with a sequentially increased value from a specified min to max values.
- *
- * __Input Gates__: 1
- * __Output Gates__: 1
- */
 message UPFeBPFArg {
-  /**
-   * SequentialUpdate's Field specifies where to rewrite, and what values to rewrite
-   * in each packet processed.
-   */
-  message Field {
-    int64 offset = 1; /// Offset in bytes for where to rewrite.
-    uint64 size = 2; /// The number of bytes to write.
-    uint64 min = 3; /// The minimum value to insert into the packet.
-    uint64 max = 4; /// The maximum value to insert into the packet.
+  message Conf {
+    string access_port = 1; /// Name of the access port
+    string core_port = 2; /// Name of the core port
+    bool enable_printk = 3;
   }
-  repeated Field fields = 1; /// A list of SequentialUpdate Fields.
+  Conf conf = 1;
 }

@@ -34,14 +34,10 @@ endif
 
 MODULES_DIR := modules
 
-bpf_objects = upf_bpf_main.bpf.o
+bpf_objects = upf_bpf_main_access.bpf.o upf_bpf_main_core.bpf.o
 
 all: clean $(bpf_objects)
 	$(call msg,ALL,BPF Objects compiled)
-
-# modules/upf_bpf_main.o: modules/upf_bpf_main.cc $(PROTO_HEADERS) $(bpf_objects)
-# 	ls 
-# 	#$(CXX) -o $@ -c $< $(CXXFLAGS) $(DEPFLAGS)
 
 $(bpf_objects): %.bpf.o: ${MODULES_DIR}/%.skel.h
 
@@ -58,5 +54,10 @@ $(MODULES_DIR)/%.bpf.o: $(MODULES_DIR)/ebpf/%.bpf.c $(wildcard $(MODULES_DIR)/eb
 clean:
 	rm -f $(MODULES_DIR)/*.skel.h
 
-format:
+format-ebpf:
 	clang-format -style=file -i $(MODULES_DIR)/ebpf/*.c $(MODULES_DIR)/ebpf/*.h
+
+format-cpp:
+	clang-format -style=file -i $(MODULES_DIR)/*.cc $(MODULES_DIR)/*.h
+
+format: format-ebpf format-cpp

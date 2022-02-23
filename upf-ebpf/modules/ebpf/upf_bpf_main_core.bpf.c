@@ -35,14 +35,16 @@
 #include <bpf/bpf_helpers.h>
 #include <xdp/xdp_helpers.h>
 
+#include "upf_bpf_common.h"
+
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
-SEC("upf_main")
+SEC("upf_main_core")
 int xdp_upf(struct xdp_md *xdp) {
     void *data_end = (void *)(long)xdp->data_end;
     void *data = (void *)(long)xdp->data;
 
-    bpf_printk("Received program on interface");
-    
+    bpf_log_printk("[Core] Received packet on interface CORE\n");
+
     return XDP_PASS;
 }
