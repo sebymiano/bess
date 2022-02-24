@@ -1,3 +1,0 @@
-!.clang-format
-modules/*.skel.h
-protobuf/bess_pb

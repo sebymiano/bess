@@ -1,0 +1,3 @@
+[submodule "upf-ebpf"]
+	path = upf-ebpf
+	url = https://github.com/sebymiano/5g-upf-ebpf.git
