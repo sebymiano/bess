@@ -22,11 +22,11 @@
 
 #define PDR_LIST_MAX_SIZE 10000
 
-struct bpf_map_def SEC("maps") pdr_list_m = {
-    .type = BPF_MAP_TYPE_HASH,
-    .key_size = sizeof(pdr_key_t),
-    .value_size = sizeof(pdr_value_t),
-    .max_entries = PDR_LIST_MAX_SIZE,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__type(key, sizeof(pdr_key_t));
+	__type(value, sizeof(pdr_value_t));
+	__uint(max_entries, PDR_LIST_MAX_SIZE);
+} pdr_list_m SEC(".maps");
 
 #endif // UPF_BPF_MAPS_H_
