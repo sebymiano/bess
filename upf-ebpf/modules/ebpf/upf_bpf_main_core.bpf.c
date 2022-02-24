@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Sebastiano Miano <mianosebastiano@gmail.com>
+ * Copyright 2022 Sebastiano Miano <mianosebastiano@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,15 +36,16 @@
 #include <xdp/xdp_helpers.h>
 
 #include "upf_bpf_common.h"
+#include "bpf_log.h"
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 SEC("upf_main_core")
 int xdp_upf(struct xdp_md *xdp) {
-    void *data_end = (void *)(long)xdp->data_end;
-    void *data = (void *)(long)xdp->data;
+  void *data_end = (void *)(long)xdp->data_end;
+  void *data = (void *)(long)xdp->data;
 
-    bpf_log_printk("[Core] Received packet on interface CORE\n");
+  bpf_log_info("[Core] Received packet on interface CORE\n");
 
-    return XDP_PASS;
+  return XDP_PASS;
 }

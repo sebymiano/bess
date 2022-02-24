@@ -44,36 +44,36 @@
 
 static inline bool validate_ethertype(struct xdp_md *xdp, __u16 *h_proto,
                                       __u16 *nh_off) {
-    void *data = (void *)(long)xdp->data;
-    void *data_end = (void *)(long)xdp->data_end;
+  void *data = (void *)(long)xdp->data;
+  void *data_end = (void *)(long)xdp->data_end;
 
-    *nh_off = ETH_HLEN;
+  *nh_off = ETH_HLEN;
 
-    if (data + *nh_off > data_end)
-        return false;
+  if (data + *nh_off > data_end)
+    return false;
 
-    struct ethhdr *eth = (struct ethhdr *)data;
-    *h_proto = eth->h_proto;
+  struct ethhdr *eth = (struct ethhdr *)data;
+  *h_proto = eth->h_proto;
 
-    if (bpf_ntohs(*h_proto) < ETH_P_802_3_MIN)
-        return false; // non-Ethernet II unsupported
+  if (bpf_ntohs(*h_proto) < ETH_P_802_3_MIN)
+    return false; // non-Ethernet II unsupported
 
 // parse double vlans
 #pragma unroll
-    for (int i = 0; i < 2; i++) {
-        if (*h_proto == bpf_ntohs(ETH_P_8021Q) ||
-            *h_proto == bpf_ntohs(ETH_P_8021AD)) {
-            struct _vlan_hdr *vhdr;
-            vhdr = (struct _vlan_hdr *)(data + *nh_off);
-            *nh_off += sizeof(struct _vlan_hdr);
-            if (data + *nh_off > data_end) {
-                return false;
-            }
-            *h_proto = vhdr->h_vlan_encapsulated_proto;
-        }
+  for (int i = 0; i < 2; i++) {
+    if (*h_proto == bpf_ntohs(ETH_P_8021Q) ||
+        *h_proto == bpf_ntohs(ETH_P_8021AD)) {
+      struct _vlan_hdr *vhdr;
+      vhdr = (struct _vlan_hdr *)(data + *nh_off);
+      *nh_off += sizeof(struct _vlan_hdr);
+      if (data + *nh_off > data_end) {
+        return false;
+      }
+      *h_proto = vhdr->h_vlan_encapsulated_proto;
     }
+  }
 
-    return true;
+  return true;
 }
 
 #endif // UPF_BPF_PARSE_UTILS_H_

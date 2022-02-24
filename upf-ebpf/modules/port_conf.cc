@@ -22,17 +22,17 @@ PortConf::PortConf(const std::string name, int ifindex)
     : if_name_(name), if_index_(ifindex) {}
 
 int PortConf::getIfIndex() {
-    return if_index_;
+  return if_index_;
 }
 
 std::string PortConf::getIfName() {
-    return if_name_;
+  return if_name_;
 }
 
 void PortConf::setIfIndex(int ifindex) {
-    if_index_ = ifindex;
+  if_index_ = ifindex;
 }
 
 void PortConf::setIfName(const std::string &ifname) {
-    if_name_ = ifname;
+  if_name_ = ifname;
 }

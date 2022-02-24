@@ -33,6 +33,7 @@ else
 endif
 
 MODULES_DIR := modules
+PROTOBUF_DIR := protobuf
 
 bpf_objects = upf_bpf_main_access.bpf.o upf_bpf_main_core.bpf.o
 
@@ -51,8 +52,11 @@ $(MODULES_DIR)/%.bpf.o: $(MODULES_DIR)/ebpf/%.bpf.c $(wildcard $(MODULES_DIR)/eb
 	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(UPF_ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
 	$(Q)$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
-clean:
-	rm -f $(MODULES_DIR)/*.skel.h
+gen-go-bindings:
+	$(call msg,GEN-GO-GRPC,$@)
+	rm -rf $(PROTOBUF_DIR)/bess_pb
+	mkdir -p $(PROTOBUF_DIR)/bess_pb
+	protoc $(PROTOBUF_DIR)/*.proto --go_opt=paths=source_relative --go_out=plugins=grpc:$(PROTOBUF_DIR)/bess_pb
 
 format-ebpf:
 	clang-format -style=file -i $(MODULES_DIR)/ebpf/*.c $(MODULES_DIR)/ebpf/*.h
@@ -61,3 +65,7 @@ format-cpp:
 	clang-format -style=file -i $(MODULES_DIR)/*.cc $(MODULES_DIR)/*.h
 
 format: format-ebpf format-cpp
+
+clean:
+	rm -f $(MODULES_DIR)/*.skel.h
+	rm -rf $(PROTOBUF_DIR)/bess_pb

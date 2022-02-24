@@ -41,36 +41,37 @@
 #include <xdp/xdp_helpers.h>
 
 #include "upf_bpf_common.h"
+#include "bpf_log.h"
 
 #define GTP_PORT 2152
 #define GTP_TYPE_GPDU 255 // User data packet (T-PDU) plus GTP-U header
 #define GTP_FLAGS 0x30    // Version: GTPv1, Protocol Type: GTP, Others: 0
 
 struct gtpv1_header { /* According to 3GPP TS 29.060. */
-    __u8 flags;
-    __u8 type;
-    __be16 length;
-    __be32 tid;
+  __u8 flags;
+  __u8 type;
+  __be16 length;
+  __be32 tid;
 } __attribute__((packed));
 
 static inline bool parse_and_validate_gtp(struct xdp_md *xdp,
                                           struct udphdr *udp, __u32 *teid) {
-    void *data = (void *)(long)xdp->data;
-    void *data_end = (void *)(long)xdp->data_end;
+  void *data = (void *)(long)xdp->data;
+  void *data_end = (void *)(long)xdp->data_end;
 
-    struct gtpv1_header *gtp =
-        (struct gtpv1_header *)((void *)udp + sizeof(*udp));
-    if ((void *)gtp + sizeof(*gtp) > data_end) {
-        return false;
-    }
+  struct gtpv1_header *gtp =
+      (struct gtpv1_header *)((void *)udp + sizeof(*udp));
+  if ((void *)gtp + sizeof(*gtp) > data_end) {
+    return false;
+  }
 
-    if (gtp->type != GTP_TYPE_GPDU) {
-        bpf_log_printk("Message type is not GTPU\n");
-        return false;
-    }
+  if (gtp->type != GTP_TYPE_GPDU) {
+    bpf_log_debug("Message type is not GTPU\n");
+    return false;
+  }
 
-    *teid = gtp->tid;
-    return true;
+  *teid = gtp->tid;
+  return true;
 }
 
 #endif // UPF_BPF_GTP_UTILS_H_

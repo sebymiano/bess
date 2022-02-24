@@ -14,14 +14,19 @@
  * limitations under the License.
  */
 
-#ifndef UPF_BPF_COMMON_H_
-#define UPF_BPF_COMMON_H_
+#ifndef UPF_BPF_MAPS_H_
+#define UPF_BPF_MAPS_H_
 
-#include <linux/if_vlan.h>
+#include "upf_bpf_structs.h"
+#include <bpf/bpf_helpers.h>
 
-struct _vlan_hdr {
-  __be16 h_vlan_TCI;
-  __be16 h_vlan_encapsulated_proto;
+#define PDR_LIST_MAX_SIZE 10000
+
+struct bpf_map_def SEC("maps") pdr_list_m = {
+    .type = BPF_MAP_TYPE_HASH,
+    .key_size = sizeof(pdr_rule_t),
+    .value_size = sizeof(pdr_value_t),
+    .max_entries = PDR_LIST_MAX_SIZE,
 };
 
-#endif // UPF_BPF_COMMON_H_
+#endif // UPF_BPF_MAPS_H_

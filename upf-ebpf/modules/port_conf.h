@@ -20,19 +20,19 @@
 #include <string>
 
 class PortConf {
-  public:
-    PortConf();
-    PortConf(const std::string name, int ifindex);
+public:
+  PortConf();
+  PortConf(const std::string name, int ifindex);
 
-    int getIfIndex();
-    std::string getIfName();
+  int getIfIndex();
+  std::string getIfName();
 
-    void setIfIndex(int ifindex);
-    void setIfName(const std::string &ifname);
+  void setIfIndex(int ifindex);
+  void setIfName(const std::string &ifname);
 
-  private:
-    std::string if_name_;
-    int if_index_;
+private:
+  std::string if_name_;
+  int if_index_;
 };
 
 #endif // BESS_MODULES_UPF_BPF_PORT_CONF_H_

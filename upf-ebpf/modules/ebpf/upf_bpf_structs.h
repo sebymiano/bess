@@ -14,14 +14,33 @@
  * limitations under the License.
  */
 
-#ifndef UPF_BPF_COMMON_H_
-#define UPF_BPF_COMMON_H_
+#ifndef UPF_BPF_STRUCTS_H_
+#define UPF_BPF_STRUCTS_H_
 
-#include <linux/if_vlan.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdbool.h>
 
-struct _vlan_hdr {
-  __be16 h_vlan_TCI;
-  __be16 h_vlan_encapsulated_proto;
-};
+struct pdr_rule_s {
+  __u32 tunnel_ip4_dst;
+  __u32 tunnel_teid;
+  __u32 ue_ip_src_addr;
+  __u32 inet_ip_dst_addr;
+  __u16 ue_src_port;
+  __u16 inet_src_port;
+  __u8 proto_id;
+} __attribute__((__packed__));
 
-#endif // UPF_BPF_COMMON_H_
+typedef struct pdr_rule_s pdr_rule_t;
+
+struct pdr_value_s {
+  __u64 pdr_id;
+  __u32 fse_id;
+  __u32 ctr_id;
+  __u32 qer_id;
+  __u32 far_id;
+} __attribute__((__packed__));
+
+typedef struct pdr_value_s pdr_value_t;
+
+#endif // UPF_BPF_STRUCTS_H_

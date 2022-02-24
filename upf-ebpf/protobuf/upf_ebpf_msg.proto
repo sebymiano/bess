@@ -31,18 +31,51 @@ syntax = "proto3";
 
 package upf_ebpf.pb;
 
-/**
- * The function `clear()` for UPFeBPF takes no parameters and clears all
- * state in the module.
- */
-message UPFeBPFCommandClearArg {
+option go_package = "github.com/omec-project/upf-epc/pfcpiface/bess_pb";
+
+message KeysData {
+  uint64 srcIface = 1;
+  uint32 tunnelIP4Dst = 2;
+  uint32 tunnelTEID = 3;
+  uint32 ueIPsrcAddr = 4;
+  uint32 inetIPdstAddr = 5;
+  uint32 ueSrcPort = 6;
+  uint32 inetSrcPort = 7;
+  uint32 protoID = 8;
 }
+
+message ValuesData {
+  uint64 pdrID = 1;
+  uint32 fseID = 2;
+  uint32 ctrID = 3;
+  uint32 qerID = 4;
+  uint32 farID = 5;
+}
+
+message UPFeBPFCommandClearArg {}
 
 message UPFeBPFArg {
   message Conf {
     string access_port = 1; /// Name of the access port
     string core_port = 2; /// Name of the core port
-    bool enable_printk = 3;
+    enum LogLevel {
+      DISABLED = 0;
+      ERR = 1;
+      WARNING = 2;
+      NOTICE = 3;
+      INFO = 4;
+      DEBUG = 5;
+    }
+    LogLevel log_level = 3;
   }
   Conf conf = 1;
 }
+
+message UPFeBPFCommandAddPDRArg {
+  int64 priority = 1;
+  KeysData keys = 2; /// The values to check for in each field.
+  KeysData masks = 3; /// The bitmask for each field -- set `0x0` to ignore the field altogether.
+  ValuesData values = 4; /// The values to check for in each fieldv.
+}
+
+

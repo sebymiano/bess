@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Sebastiano Miano <mianosebastiano@gmail.com>
+ * Copyright 2022 Sebastiano Miano <mianosebastiano@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,98 +30,97 @@
 #include <sys/socket.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
 #include <bpf/bpf_helpers.h>
 #include <xdp/xdp_helpers.h>
 
 #include "upf_bpf_common.h"
+#include "bpf_log.h"
 #include "parse_utils.h"
 #include "gtp_utils.h"
+#include "upf_bpf_maps.h"
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 SEC("upf_main_access")
 int xdp_upf(struct xdp_md *xdp) {
-    void *data_end = (void *)(long)xdp->data_end;
-    void *data = (void *)(long)xdp->data;
+  void *data_end = (void *)(long)xdp->data_end;
+  void *data = (void *)(long)xdp->data;
 
-    __u16 l3_proto;
-    __u16 nh_off;
-    bpf_log_printk("[Access] Received packet on interface ACCESS\n");
+  __u16 l3_proto;
+  __u16 nh_off;
+  bpf_log_debug("[Access] Received packet on interface ACCESS\n");
 
-    if (!validate_ethertype(xdp, &l3_proto, &nh_off)) {
-        bpf_log_printk("[Access] Unrecognized L3 protocol\n");
-        goto DROP;
-    }
+  if (!validate_ethertype(xdp, &l3_proto, &nh_off)) {
+    bpf_log_err("[Access] Unrecognized L3 protocol\n");
+    goto DROP;
+  }
 
-    switch (l3_proto) {
-    case bpf_htons(ETH_P_IP):
-        goto IP; // ipv4 packet
-    case bpf_htons(ETH_P_IPV6):
-        // TODO: Maybe in the future we want to support IPv6 as well
-        goto IP6;
-        break;
-    case bpf_htons(ETH_P_ARP):
-        goto ARP; // arp packet
-    default:
-        goto DROP;
-    }
+  switch (l3_proto) {
+  case bpf_htons(ETH_P_IP):
+    goto IP; // ipv4 packet
+  case bpf_htons(ETH_P_IPV6):
+    // TODO: Maybe in the future we want to support IPv6 as well
+    goto IP6;
+    break;
+  case bpf_htons(ETH_P_ARP):
+    goto ARP; // arp packet
+  default:
+    goto DROP;
+  }
 
 IP:;
-    struct iphdr *iph = data + nh_off;
-    if ((void *)iph + sizeof(*iph) > data_end) {
-        bpf_log_printk("[Access] Invalid IPv4 packet\n");
-        goto DROP;
-    }
+  struct iphdr *iph = data + nh_off;
+  if ((void *)iph + sizeof(*iph) > data_end) {
+    bpf_log_err("[Access] Invalid IPv4 packet\n");
+    goto DROP;
+  }
 
-    // Probably we need to perform additional checks here.
-    // E.g., we might want to check if the packet has dst address equal to the
-    // N3 interface of the UPF
+  // Probably we need to perform additional checks here.
+  // E.g., we might want to check if the packet has dst address equal to the
+  // N3 interface of the UPF
 
-    if (iph->protocol != IPPROTO_UDP) {
-        bpf_log_printk("[Access] Received non-UDP packet\n");
-        return XDP_PASS;
-    }
+  if (iph->protocol != IPPROTO_UDP) {
+    bpf_log_err("[Access] Received non-UDP packet\n");
+    return XDP_PASS;
+  }
 
 UDP:;
-    struct udphdr *udp = (void *)iph + 4 * iph->ihl;
-    if ((void *)udp + sizeof(*udp) > data_end) {
-        bpf_log_printk("[Access] Invalid UDP packet\n");
-        goto DROP;
-    }
+  struct udphdr *udp = (void *)iph + 4 * iph->ihl;
+  if ((void *)udp + sizeof(*udp) > data_end) {
+    bpf_log_err("[Access] Invalid UDP packet\n");
+    goto DROP;
+  }
 
-    __u32 teid;
+  __u32 teid;
 
-    if (udp->dest == GTP_PORT) {
-        if (!parse_and_validate_gtp(xdp, udp, &teid)) {
-            bpf_log_printk("[Access] Invalid GTP packet\n");
-            goto DROP;
-        } else {
-            goto PDR_LOOKUP;
-        }
+  if (udp->dest == bpf_htons(GTP_PORT)) {
+    if (!parse_and_validate_gtp(xdp, udp, &teid)) {
+      bpf_log_err("[Access] Invalid GTP packet\n");
+      goto DROP;
     } else {
-        bpf_log_printk(
-            "[Access] UDP packet received but not matching GTP port\n");
+      goto PDR_LOOKUP;
     }
+  } else {
+    bpf_log_debug("[Access] UDP packet received but not matching GTP port\n");
+  }
 
 PDR_LOOKUP:;
-    bpf_log_printk("[Access] GTP packet parsed and extracted TEID = %u\n",
-                   teid);
-    return XDP_PASS;
+  bpf_log_info("[Access] GTP packet parsed and extracted TEID = %u\n", teid);
+  return XDP_PASS;
 
 IP6:;
-    bpf_log_printk("[Access] Received IPv6 Packet. Dropping\n");
-    return XDP_DROP;
+  bpf_log_debug("[Access] Received IPv6 Packet. Dropping\n");
+  return XDP_DROP;
 
 ARP:;
-    // TODO: To be implemented. We can handle the ARP in the data plane,
-    // or we can send the packet to userspace and let BESS handle it.
-    bpf_log_printk("[Access] Received ARP.\n");
-    return XDP_DROP;
+  // TODO: To be implemented. We can handle the ARP in the data plane,
+  // or we can send the packet to userspace and let BESS handle it.
+  bpf_log_debug("[Access] Received ARP.\n");
+  return XDP_DROP;
 
 DROP:;
-    bpf_log_printk("[Access] Dropping packet.\n");
-    return XDP_DROP;
+  bpf_log_debug("[Access] Dropping packet.\n");
+  return XDP_DROP;
 }
