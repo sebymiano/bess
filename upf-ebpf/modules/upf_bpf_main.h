@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-#ifndef BESS_MODULES_UPF_BPF_H_
-#define BESS_MODULES_UPF_BPF_H_
+#pragma once
 
 #include "module.h"
 #include "utils/endian.h"
@@ -87,5 +86,3 @@ private:
   PortConf access_port_;
   PortConf core_port_;
 };
-
-#endif // BESS_MODULES_UPF_BPF_H_

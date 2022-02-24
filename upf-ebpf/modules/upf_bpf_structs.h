@@ -14,19 +14,35 @@
  * limitations under the License.
  */
 
-#ifndef UPF_BPF_MAPS_H_
-#define UPF_BPF_MAPS_H_
+#pragma once
 
-#include "upf_bpf_structs.h"
-#include <bpf/bpf_helpers.h>
+#include <cstdint>
+#include <functional>
+#include <string>
+#include <vector>
 
-#define PDR_LIST_MAX_SIZE 10000
+namespace upf_ebpf {
 
-struct bpf_map_def SEC("maps") pdr_list_m = {
-    .type = BPF_MAP_TYPE_HASH,
-    .key_size = sizeof(pdr_key_t),
-    .value_size = sizeof(pdr_value_t),
-    .max_entries = PDR_LIST_MAX_SIZE,
-};
+struct pdr_key_s {
+  uint32_t tunnel_ip4_dst;
+  uint32_t tunnel_teid;
+  uint32_t ue_ip_src_addr;
+  uint32_t inet_ip_dst_addr;
+  uint16_t ue_src_port;
+  uint16_t inet_src_port;
+  uint8_t proto_id;
+} __attribute__((__packed__));
 
-#endif // UPF_BPF_MAPS_H_
+typedef struct pdr_key_s pdr_key_t;
+
+struct pdr_value_s {
+  uint64_t pdr_id;
+  uint32_t fse_id;
+  uint32_t ctr_id;
+  uint32_t qer_id;
+  uint32_t far_id;
+} __attribute__((__packed__));
+
+typedef struct pdr_value_s pdr_value_t;
+
+} // namespace upf_ebpf

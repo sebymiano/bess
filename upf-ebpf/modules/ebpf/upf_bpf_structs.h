@@ -21,7 +21,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-struct pdr_rule_s {
+struct pdr_key_s {
   __u32 tunnel_ip4_dst;
   __u32 tunnel_teid;
   __u32 ue_ip_src_addr;
@@ -31,7 +31,7 @@ struct pdr_rule_s {
   __u8 proto_id;
 } __attribute__((__packed__));
 
-typedef struct pdr_rule_s pdr_rule_t;
+typedef struct pdr_key_s pdr_key_t;
 
 struct pdr_value_s {
   __u64 pdr_id;

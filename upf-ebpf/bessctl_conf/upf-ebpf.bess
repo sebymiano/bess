@@ -15,4 +15,4 @@
 #
 
 
-ebpf::UPFeBPF(conf={'access_port': 'ens4f0', 'core_port': 'ens4f1', 'log_level': DEBUG})
+ebpf::UPFeBPF(conf={'access_port': 'ens4f0', 'core_port': 'ens4f1', 'log_level': 'DEBUG'})

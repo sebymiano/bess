@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-#ifndef BESS_MODULES_UPF_BPF_PORT_CONF_H_
-#define BESS_MODULES_UPF_BPF_PORT_CONF_H_
+#pragma once
 
 #include <string>
 
@@ -34,5 +33,3 @@ private:
   std::string if_name_;
   int if_index_;
 };
-
-#endif // BESS_MODULES_UPF_BPF_PORT_CONF_H_

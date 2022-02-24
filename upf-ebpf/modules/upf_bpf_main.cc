@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Sebastiano Miano <mianosebastiano@gmail.com>
+ * Copyright 2022 Sebastiano Miano <mianosebastiano@gmail.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@
 #include <xdp/libxdp.h>
 
 #include "upf_bpf_main.h"
+#include "upf_bpf_structs.h"
 
 using bess::utils::be32_t;
 
@@ -151,6 +152,29 @@ UPFeBPF::CommandAddPDR(const upf_ebpf::pb::UPFeBPFCommandAddPDRArg &arg) {
   std::cout << arg.keys().DebugString() << std::endl;
   std::cout << arg.masks().DebugString() << std::endl;
   std::cout << arg.values().DebugString() << std::endl;
+
+  upf_ebpf::pdr_key_t key;
+  key.tunnel_ip4_dst = arg.keys().tunnelip4dst();
+  key.tunnel_teid = arg.keys().tunnelteid();
+  key.ue_ip_src_addr = arg.keys().ueipsrcaddr();
+  key.inet_ip_dst_addr = arg.keys().inetipdstaddr();
+  key.ue_src_port = arg.keys().uesrcport();
+  key.inet_src_port = arg.keys().inetsrcport();
+  key.proto_id = arg.keys().protoid();
+
+  upf_ebpf::pdr_value_t value;
+  value.pdr_id = arg.values().pdrid();
+  value.fse_id = arg.values().fseid();
+  value.ctr_id = arg.values().ctrid();
+  value.qer_id = arg.values().qerid();
+  value.far_id = arg.values().farid();
+
+  // Now it is time to insert the entry in the map
+  int ret = bpf_map_update_elem(pdr_map_fd_, static_cast<void *>(&key),
+                                static_cast<void *>(&value), BPF_ANY);
+  if (ret != 0) {
+    return CommandFailure(-1, "bpf_map_update_elem inside addPDR failed");
+  }
 
   return CommandSuccess();
 }

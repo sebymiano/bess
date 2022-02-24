@@ -37,7 +37,7 @@ PROTOBUF_DIR := protobuf
 
 bpf_objects = upf_bpf_main_access.bpf.o upf_bpf_main_core.bpf.o
 
-all: clean $(bpf_objects)
+all: clean $(bpf_objects) gen-go-bindings
 	$(call msg,ALL,BPF Objects compiled)
 
 $(bpf_objects): %.bpf.o: ${MODULES_DIR}/%.skel.h
